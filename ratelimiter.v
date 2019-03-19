@@ -1,6 +1,5 @@
-module RateDivider(in_clock, reset_val, out_clock);
+module RateDivider(in_clock, out_clock);
 	input in_clock;
-	input [24:0] reset_val;
 	reg [24:0] counter;
 	output reg out_clock;
 	
@@ -13,11 +12,11 @@ module RateDivider(in_clock, reset_val, out_clock);
 	begin
 		if(counter == 0)
 			begin
-				counter <= 25'd49999999;
+				counter <= 25'd49999999;//reset the clock
 				out_clock <= ~out_clock;
 			end
 		else begin
-			counter <= counter - 25'd1;
+			counter <= counter - 25'd1;//decrement
 		end
 	end
 endmodule	
