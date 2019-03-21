@@ -1,6 +1,6 @@
 // Part 2 skeleton
 
-module part2
+module project
 	(
 		CLOCK_50,						//	On Board 50 MHz
 		// Your inputs and outputs here
@@ -14,7 +14,8 @@ module part2
 		VGA_SYNC_N,						//	VGA SYNC
 		VGA_R,   						//	VGA Red[9:0]
 		VGA_G,	 						//	VGA Green[9:0]
-		VGA_B   						//	VGA Blue[9:0]
+		VGA_B,   						//	VGA Blue[9:0]
+		LEDR
 	);
 
 	input			CLOCK_50;				//	50 MHz
@@ -31,6 +32,7 @@ module part2
 	output	[9:0]	VGA_R;   				//	VGA Red[9:0]
 	output	[9:0]	VGA_G;	 				//	VGA Green[9:0]
 	output	[9:0]	VGA_B;   				//	VGA Blue[9:0]
+	output [9:0] LEDR;
 	
 	wire resetn;
 	assign resetn = KEY[0];
@@ -60,21 +62,25 @@ module part2
 			.VGA_BLANK(VGA_BLANK_N),
 			.VGA_SYNC(VGA_SYNC_N),
 			.VGA_CLK(VGA_CLK));
-		defparam VGA.RESOLUTION = "11x12";
+		defparam VGA.RESOLUTION = "160x120";
 		defparam VGA.MONOCHROME = "FALSE";
 		defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
-		defparam VGA.BACKGROUND_IMAGE = "background.mif";
+		defparam VGA.BACKGROUND_IMAGE = "black.mif";
 			
 	// Put your code here. Your code should produce signals x,y,colour and writeEn/plot
 	// for the VGA controller, in addition to any other functionality your design may require.
 
-    reg [7:0] counter;
+   wire [7:0] counter;
 	// States of FSM that we are in.
 	wire shift, load, plot, wait_out;
-	reg [11:0] reg0, reg1, reg2, reg3, reg4;
-	reg [2:0] colour_out;
-	reg [3:0] xout, yout;
+	wire [11:0] reg0, reg1, reg2, reg3, reg4;
+	wire [2:0] colour_out;
+	wire [3:0] xout, yout;
+	assign LEDR[9:0] = reg0[9:0];
 
+//	assign LEDR[8] = load;
+//	assign LEDR[7] = plot;
+//	assign LEDR[6] = wait_out;
     // Instansiate datapath
 	datapath d0(.counter(counter), .reg0(reg0), .reg1(reg1), .reg2(reg2), .reg3(reg3), .reg4(reg4), .xout(xout), .yout(yout), .colour_out(colour_out));
 
@@ -82,46 +88,45 @@ module part2
     control c0(.clk(CLOCK_50), .resetn(KEY[0]), .go(1'b1), .shift(shift), .load(load), .plot(plot), .wait_out(wait_out), .counter(counter));
 
 	//Five registers for the 5 columns
-	fiveReg ourFiveReg(.in(SW[4:0]), .reg0(reg0), .reg1(reg1), .reg2(reg2), .reg3(reg3), .reg4(reg4), .shift(shift), .load(load), .resetn(KEY[0]));
+	fiveReg ourFiveReg(.in(SW[4:0]), .reg0(reg0), .reg1(reg1), .reg2(reg2), .reg3(reg3), .reg4(reg4), .shift(shift), 
+	.load(load));
     
 endmodule
 
-module fiveReg(in, reg0, reg1, reg2, reg3, reg4, shift, load, resetn);
+module fiveReg(in, reg0, reg1, reg2, reg3, reg4, shift, load);
 	input [4:0] in;
 	//shiftClk is the clk for shifting the bits right, setClk is for setting the new bits based on IN.
-	input shift, resetn, load;
+	input shift, load;
 	output reg [11:0] reg0, reg1, reg2, reg3, reg4;
+	
+	initial reg0 = 1'b0;
+	initial reg1 = 1'b0;
+	initial reg2 = 1'b0;
+	initial reg3 = 1'b0;
+	initial reg4 = 1'b0;
 
-	always @(posedge shift, posedge load, negedge resetn)
+	always @(posedge shift, posedge load)
 	begin
-		if (!resetn)
-			begin
-				reg0 <= 1'b0;
-				reg1 <= 1'b0;
-				reg2 <= 1'b0;
-				reg3 <= 1'b0;
-				reg4 <= 1'b0;
-			end
 		if (shift)
 			begin
-				reg0 <= reg0 >> 1;
-				reg1 <= reg1 >> 1;
-				reg2 <= reg2 >> 1;
-				reg3 <= reg3 >> 1;
-				reg4 <= reg4 >> 1;
+				reg0 <= reg0 << 1;
+				reg1 <= reg1 << 1;
+				reg2 <= reg2 << 1;
+				reg3 <= reg3 << 1;
+				reg4 <= reg4 << 1;
 			end
 		if (load)
 			begin
 				if (in[0] == 1'b1)
 					reg0[0] <= 1'b1;
 				if (in[1] == 1'b1)
-					reg1[1] <= 1'b1;
+					reg1[0] <= 1'b1;
 				if (in[2] == 1'b1)
-					reg2[2] <= 1'b1;
+					reg2[0] <= 1'b1;
 				if (in[3] == 1'b1)
-					reg3[3] <= 1'b1;
+					reg3[0] <= 1'b1;
 				if (in[4] == 1'b1)
-					reg4[4] <= 1'b1;
+					reg4[0] <= 1'b1;
 			end
 	end
 endmodule
@@ -132,40 +137,39 @@ module datapath(counter, reg0, reg1, reg2, reg3, reg4, xout, yout, colour_out);
 	output reg [3:0] xout;
 	output reg [3:0] yout;
 	
-	output [2:0] colour_out;
+	output reg [2:0] colour_out;
 	
 	always @ (*) 
-	begin: counter
+	begin //counter
 		xout = 0;
 		yout = counter % 12;
-		colour_out = 111;
-		case (counter)
-			[0:11]: begin
-				xout = 3;
-				if (reg0[yout] == 1'b1)
-					colour_out = 010;
-			end
-			[12:23]: begin
-				xout = 4;
-				if (reg1[yout] == 1'b1)
-					colour_out = 100;
-			end
-			[24:35]: begin
-				xout = 5;
-				if (reg2[yout] == 1'b1)
-					colour_out = 110;
-			end
-			[36:47]: begin
-				xout = 6;
-				if (reg3[yout] == 1'b1)
-					colour_out = 001;
-			end
-			[48:59]: begin
-				xout = 7;
-				if (reg4[yout] == 1'b1)
-					colour_out = 101;
-			end
-		endcase
+		colour_out = 3'b111;
+		if(counter < 12) begin // 0 11
+			xout = 3;
+			if (reg0[yout] == 1'b1)
+				colour_out = 3'b010;
+		end
+		else if ((counter > 11)&&(counter < 24)) begin //12 23
+			xout = 4;
+			if (reg1[yout] == 1'b1)
+				colour_out = 3'b100;
+		end
+		else if ((counter > 23)&&(counter < 36)) begin//24 35
+			xout = 5;
+			if (reg2[yout] == 1'b1)
+				colour_out = 3'b110;
+		end
+		else if ((counter > 35)&&(counter < 48)) begin //36 47
+			xout = 6;
+			if (reg3[yout] == 1'b1)
+				colour_out = 3'b001;
+		end
+		else if (counter > 47) begin // 48 59
+			xout = 7;
+			if (reg4[yout] == 1'b1)
+				colour_out = 3'b101;
+		end
+		
 	end
 endmodule
 
@@ -173,12 +177,11 @@ module control(
     input clk,
     input resetn,
     input go,
-
-    output reg  shift, load, plot, wait_out;
-	output reg [7:0] counter;
+	output reg  shift, load, plot, wait_out,
+	output reg [7:0] counter
     );
 	reg [24:0] wait_counter;
-	reg [24:0] wait_reset = 25'd49999999;
+	reg [24:0] wait_reset;
 
     reg [3:0] current_state, next_state; 
     
@@ -209,7 +212,7 @@ module control(
         shift = 1'b0;
         load = 1'b0;
         plot = 1'b0;
-		wait_out = 1'b0;
+			wait_out = 1'b0;
 
         case (current_state)
 
@@ -222,9 +225,9 @@ module control(
             S_PRINT: begin
                 plot = 1'b1;
                 end
-			S_WAIT: begin
-				wait_out = 1'b1;
-				end
+				S_WAIT: begin
+					wait_out = 1'b1;
+					end
         endcase
     end // enable_signals
    
@@ -234,12 +237,12 @@ module control(
         if(!resetn)
 			begin
             current_state <= S_RESET;
-			counter <= 1'b0;
-			wait_counter <= 1'b0;
+				counter <= 1'b0;
+				wait_counter <= 25'd5;
 			end
         else
 		begin
-            if(current_state == S_PRINT)
+         if(current_state == S_PRINT)
 			begin
 				if(counter == 8'd59)
 					begin
@@ -256,7 +259,7 @@ module control(
 				if(wait_counter == 1'b0)
 					begin
 						current_state <= next_state;
-						wait_counter <= wait_reset;
+						wait_counter <= 25'd5;
 					end
 				else
 					wait_counter <= wait_counter - 1;
@@ -269,41 +272,46 @@ module control(
     end // state_FFS
 endmodule
 
-module top_level(CLOCK_50, SW, KEY, xBus, yBus, plot, colour_out);
+module project2(CLOCK_50, SW, KEY, LEDR, HEX0, xBus, yBus, plot, colour_out);
 	input CLOCK_50;
 	input [9:0] SW;
 	input [3:0] KEY;
+	output [9:0] LEDR;
 	output [7:0] xBus;
 	output [6:0] yBus;
 	output [2:0] colour_out;
+	output [6:0] HEX0;
 	output plot;
 	
 	wire [1:0] xoffset, yoffset;
 	wire loadx, loady, p;
 	
-	datapath d0(
-		.colour(SW[9:7]),
-		.reset_n(KEY[0]),
-		.xoffset(xoffset),
-		.yoffset(yoffset),
-		.position(SW[6:0]),
-		.loadX(loadx),
-		.loadY(loady),
-		.xout(xBus),
-		.yout(yBus),
-		.colour_out(colour_out)
-		);
-	
-	control c0(
-		.clk(CLOCK_50),
-		.resetn(KEY[0]),
-		.go(KEY[1]),
-		.loadX(loadx),
-		.loadY(loady),
-		.plot(p),
-		.xoffset(xoffset),
-		.yoffset(yoffset)
-		);
+//	datapath d0(
+//		.colour(SW[9:7]),
+//		.reset_n(KEY[0]),
+//		.xoffset(xoffset),
+//		.yoffset(yoffset),
+//		.position(SW[6:0]),
+//		.loadX(loadx),
+//		.loadY(loady),
+//		.xout(xBus),
+//		.yout(yBus),
+//		.colour_out(colour_out)
+//		);
+//	
+//	control c0(
+//		.clk(CLOCK_50),
+//		.resetn(KEY[0]),
+//		.go(KEY[1]),
+//		.loadX(loadx),
+//		.loadY(loady),
+//		.plot(p),
+//		.xoffset(xoffset),
+//		.yoffset(yoffset)
+//		);
+fiveReg ourFiveReg(.in(SW[4:0]), .reg0(reg0), .reg1(reg1), .reg2(reg2), 
+.reg3(reg3), .reg4(reg4), .shift(shift), .load(load), .resetn(KEY[0]));
+
 endmodule
 	
 		
