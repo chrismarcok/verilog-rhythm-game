@@ -1,5 +1,3 @@
-// Part 2 skeleton
-
 module project
 	(
 		CLOCK_50,						//	On Board 50 MHz
@@ -70,42 +68,45 @@ module project
 	// Put your code here. Your code should produce signals x,y,colour and writeEn/plot
 	// for the VGA controller, in addition to any other functionality your design may require.
 
-   wire [7:0] counter;
+   wire [15:0] block_counter;
+	wire [15:0] x_counter;
+	wire [15:0] y_counter;
 	// States of FSM that we are in.
 	wire shift, load, plot, wait_out;
 	wire [11:0] reg0, reg1, reg2, reg3, reg4;
 	wire [2:0] colour_out;
-	wire [3:0] xout, yout;
+	wire [7:0] xout;
+	wire [6:0] yout;
 	assign LEDR[9:0] = reg0[9:0];
 
-//	assign LEDR[8] = load;
-//	assign LEDR[7] = plot;
-//	assign LEDR[6] = wait_out;
-    // Instansiate datapath
-	datapath d0(.counter(counter), .reg0(reg0), .reg1(reg1), .reg2(reg2), .reg3(reg3), .reg4(reg4), .xout(xout), .yout(yout), .colour_out(colour_out));
+	datapath d0(.block_counter(block_counter), .x_counter(x_counter), .y_counter(y_counter), 
+	.reg0(reg0), .reg1(reg1), .reg2(reg2), 
+	.reg3(reg3), .reg4(reg4), .xout(xout), .yout(yout), .colour_out(colour_out));
 
-    // Instansiate FSM control
-    control c0(.clk(CLOCK_50), .resetn(KEY[0]), .go(1'b1), .shift(shift), .load(load), .plot(plot), .wait_out(wait_out), .counter(counter));
+   control c0(.clk(CLOCK_50), .resetn(KEY[1]), .go(1'b1), .shift(shift), 
+	.load(load), .plot(plot), .wait_out(wait_out), 
+	.block_counter(block_counter), .x_counter(x_counter), .y_counter(y_counter));
 
-	//Five registers for the 5 columns
-	fiveReg ourFiveReg(.in(SW[4:0]), .reg0(reg0), .reg1(reg1), .reg2(reg2), .reg3(reg3), .reg4(reg4), .shift(shift), 
+	fiveReg ourFiveReg(.clk(CLOCK_50), .in(SW[4:0]), .reg0(reg0), 
+	.reg1(reg1), .reg2(reg2), .reg3(reg3), .reg4(reg4), .shift(shift), 
 	.load(load));
     
 endmodule
 
-module fiveReg(in, reg0, reg1, reg2, reg3, reg4, shift, load);
+module fiveReg(clk, in, reg0, reg1, reg2, reg3, reg4, shift, load);
+	input clk;
 	input [4:0] in;
 	//shiftClk is the clk for shifting the bits right, setClk is for setting the new bits based on IN.
 	input shift, load;
 	output reg [11:0] reg0, reg1, reg2, reg3, reg4;
 	
-	initial reg0 = 1'b0;
-	initial reg1 = 1'b0;
-	initial reg2 = 1'b0;
-	initial reg3 = 1'b0;
-	initial reg4 = 1'b0;
+	initial reg0 = 12'b000000000000;
+	initial reg1 = 12'b000000000000;
+	initial reg2 = 12'b000000000000;
+	initial reg3 = 12'b000000000000;
+	initial reg4 = 12'b000000000000;
 
-	always @(posedge shift, posedge load)
+	always @(posedge clk)
 	begin
 		if (shift)
 			begin
@@ -131,42 +132,45 @@ module fiveReg(in, reg0, reg1, reg2, reg3, reg4, shift, load);
 	end
 endmodule
 
-module datapath(counter, reg0, reg1, reg2, reg3, reg4, xout, yout, colour_out);
-	input [7:0] counter; 
+module datapath( block_counter, x_counter, y_counter, reg0, reg1, reg2, reg3, reg4, xout, yout, colour_out);
+	
+	input [15:0] block_counter, x_counter, y_counter; 
 	input [11:0] reg0, reg1, reg2, reg3, reg4;
-	output reg [3:0] xout;
-	output reg [3:0] yout;
+	output reg [7:0] xout;
+	output reg [6:0] yout;
+	reg [7:0] block;
 	
 	output reg [2:0] colour_out;
 	
 	always @ (*) 
 	begin //counter
-		xout = 0;
-		yout = counter % 12;
 		colour_out = 3'b111;
-		if(counter < 12) begin // 0 11
-			xout = 3;
-			if (reg0[yout] == 1'b1)
+		xout = 16'd0;
+		//block = block_counter % 16'd12;
+		yout = ((block_counter % 16'd12) * 16'd10) + y_counter;
+		if(block_counter < 16'd12) begin // 0 - 11
+			xout = 16'd30 + x_counter;
+			if (reg0[block_counter % 16'd12] == 1'b1)
 				colour_out = 3'b010;
 		end
-		else if ((counter > 11)&&(counter < 24)) begin //12 23
-			xout = 4;
-			if (reg1[yout] == 1'b1)
+		else if ((block_counter > 16'd11)&&(block_counter < 16'd24)) begin //12 - 23
+			xout = 16'd50 + x_counter;
+			if (reg1[block_counter % 16'd12] == 1'b1)
 				colour_out = 3'b100;
 		end
-		else if ((counter > 23)&&(counter < 36)) begin//24 35
-			xout = 5;
-			if (reg2[yout] == 1'b1)
+		else if ((block_counter > 16'd23)&&(block_counter < 16'd36)) begin//24 - 35
+			xout = 16'd70 + x_counter;
+			if (reg2[block_counter % 16'd12] == 1'b1)
 				colour_out = 3'b110;
 		end
-		else if ((counter > 35)&&(counter < 48)) begin //36 47
-			xout = 6;
-			if (reg3[yout] == 1'b1)
+		else if ((block_counter > 16'd35)&&(block_counter < 16'd48)) begin //36 - 47
+			xout = 16'd90 + x_counter;
+			if (reg3[block_counter % 16'd12] == 1'b1)
 				colour_out = 3'b001;
 		end
-		else if (counter > 47) begin // 48 59
-			xout = 7;
-			if (reg4[yout] == 1'b1)
+		else if (block_counter > 16'd47) begin //48 - 59
+			xout = 16'd110 + x_counter;
+			if (reg4[block_counter % 16'd12] == 1'b1)
 				colour_out = 3'b101;
 		end
 		
@@ -177,19 +181,27 @@ module control(
     input clk,
     input resetn,
     input go,
-	output reg  shift, load, plot, wait_out,
-	output reg [7:0] counter
-    );
-	reg [24:0] wait_counter;
-	reg [24:0] wait_reset;
+	 output reg  shift, load, plot, wait_out,
+	 output reg [15:0] block_counter, x_counter, y_counter);
+	
+	 reg [24:0] wait_counter;
+	 reg [24:0] wait_reset;
 
     reg [3:0] current_state, next_state; 
+	 
+	  localparam  S_RESET      = 4'd0,
+				 S_SHIFT   	 = 4'd1,
+				 S_LOAD       = 4'd2,
+				 S_PRINT   	 = 4'd3,
+				 S_WAIT       = 4'd4;
+	 
+	 initial current_state = S_RESET;
+	 initial block_counter = 1'b0;
+	 initial x_counter = 1'b0;
+	 initial y_counter = 1'b0;
+	 initial wait_counter = 25'd49999999;
     
-    localparam  S_RESET      = 4'd0,
-                S_SHIFT   	 = 4'd1,
-                S_LOAD       = 4'd2,
-                S_PRINT   	 = 4'd3,
-                S_WAIT       = 4'd4;
+
     
     // Next state logic aka our state table
     always@(*)
@@ -204,7 +216,7 @@ module control(
         endcase
     end // state_table
    
-
+//number: 25'd49999999
     // Output logic aka all of our datapath control signals
     always @(*)
     begin: enable_signals
@@ -215,7 +227,6 @@ module control(
 			wait_out = 1'b0;
 
         case (current_state)
-
             S_LOAD: begin
                 load = 1'b1;
                 end
@@ -237,21 +248,39 @@ module control(
         if(!resetn)
 			begin
             current_state <= S_RESET;
-				counter <= 1'b0;
-				wait_counter <= 25'd5;
+				block_counter <= 1'b0;
+				wait_counter <= 25'd49999999;
 			end
         else
 		begin
+		
          if(current_state == S_PRINT)
 			begin
-				if(counter == 8'd59)
+				if(block_counter == 16'd59 && x_counter == 16'd19 && y_counter == 16'd9)
 					begin
 						current_state <= next_state;
-						counter <= 1'b0;
+						block_counter <= 1'b0;
+						x_counter <= 1'b0;
+						y_counter <= 1'b0;
+					end	
+				else if (y_counter == 16'd9 && x_counter == 16'd19)
+					begin
+						x_counter <= 1'b0;
+						y_counter <= 1'b0;
+						block_counter <= block_counter + 1'd1;
+					end
+				else if (x_counter == 16'd19)
+					begin
+						x_counter <= 1'b0;
+						y_counter <= y_counter + 1'd1;
 					end
 				else
-					counter <= counter + 1;
+					begin
+						x_counter <= x_counter + 1'd1;
+					end
 			end
+			
+			
 			//END PRINT COUNTER
 
 			else if (current_state == S_WAIT)
@@ -259,7 +288,7 @@ module control(
 				if(wait_counter == 1'b0)
 					begin
 						current_state <= next_state;
-						wait_counter <= 25'd5;
+						wait_counter <= 25'd49999999;
 					end
 				else
 					wait_counter <= wait_counter - 1;
@@ -271,47 +300,3 @@ module control(
 		end
     end // state_FFS
 endmodule
-
-module project2(CLOCK_50, SW, KEY, LEDR, HEX0, xBus, yBus, plot, colour_out);
-	input CLOCK_50;
-	input [9:0] SW;
-	input [3:0] KEY;
-	output [9:0] LEDR;
-	output [7:0] xBus;
-	output [6:0] yBus;
-	output [2:0] colour_out;
-	output [6:0] HEX0;
-	output plot;
-	
-	wire [1:0] xoffset, yoffset;
-	wire loadx, loady, p;
-	
-//	datapath d0(
-//		.colour(SW[9:7]),
-//		.reset_n(KEY[0]),
-//		.xoffset(xoffset),
-//		.yoffset(yoffset),
-//		.position(SW[6:0]),
-//		.loadX(loadx),
-//		.loadY(loady),
-//		.xout(xBus),
-//		.yout(yBus),
-//		.colour_out(colour_out)
-//		);
-//	
-//	control c0(
-//		.clk(CLOCK_50),
-//		.resetn(KEY[0]),
-//		.go(KEY[1]),
-//		.loadX(loadx),
-//		.loadY(loady),
-//		.plot(p),
-//		.xoffset(xoffset),
-//		.yoffset(yoffset)
-//		);
-fiveReg ourFiveReg(.in(SW[4:0]), .reg0(reg0), .reg1(reg1), .reg2(reg2), 
-.reg3(reg3), .reg4(reg4), .shift(shift), .load(load), .resetn(KEY[0]));
-
-endmodule
-	
-		
