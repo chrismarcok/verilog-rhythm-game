@@ -13,7 +13,10 @@ module project
 		VGA_R,   						//	VGA Red[9:0]
 		VGA_G,	 						//	VGA Green[9:0]
 		VGA_B,   						//	VGA Blue[9:0]
-		LEDR
+		LEDR,
+		HEX0, HEX1, HEX2, HEX5,
+		PS2_CLK,
+		PS2_DAT
 	);
 
 	input			CLOCK_50;				//	50 MHz
@@ -31,6 +34,9 @@ module project
 	output	[9:0]	VGA_G;	 				//	VGA Green[9:0]
 	output	[9:0]	VGA_B;   				//	VGA Blue[9:0]
 	output [9:0] LEDR;
+	output [6:0] HEX0, HEX1, HEX2, HEX5;
+	inout PS2_CLK;
+	inout PS2_DAT;
 	
 	wire resetn;
 	assign resetn = KEY[0];
@@ -77,7 +83,11 @@ module project
 	wire [2:0] colour_out;
 	wire [7:0] xout;
 	wire [6:0] yout;
-	assign LEDR[9:0] = reg0[9:0];
+	//assign LEDR[9:0] = reg0[9:0];
+	
+	wire [4:0] randowire;
+	
+	fibonacci_lfsr_5bit f0(.clk(CLOCK_50), .rst_n(KEY[2]), .data(randowire));
 
 	datapath d0(.block_counter(block_counter), .x_counter(x_counter), .y_counter(y_counter), 
 	.reg0(reg0), .reg1(reg1), .reg2(reg2), 
@@ -87,10 +97,73 @@ module project
 	.load(load), .plot(plot), .wait_out(wait_out), 
 	.block_counter(block_counter), .x_counter(x_counter), .y_counter(y_counter));
 
-	fiveReg ourFiveReg(.clk(CLOCK_50), .in(SW[4:0]), .reg0(reg0), 
+	fiveReg ourFiveReg(.clk(CLOCK_50), .in(randowire), .reg0(reg0), 
 	.reg1(reg1), .reg2(reg2), .reg3(reg3), .reg4(reg4), .shift(shift), 
 	.load(load));
-    
+	
+	wire [7:0] score, lives;
+	wire [3:0] score_ones;
+	wire [3:0] score_tens;
+	wire [3:0] score_hunds;
+	scoreReg r0(.clk(keyboard_out[8]), .q(score));
+	lifeReg(.clk(keyboard_out[9]), .q(lives));
+	
+	BCD my_BCD(.data(score), .hundreds(score_hunds), .tens(score_tens),.ones(score_ones));
+	
+	my_hex_decoder h0(.hex_digit(score_ones), .segments(HEX0[6:0]));
+	my_hex_decoder h1(.hex_digit(score_tens), .segments(HEX1[6:0]));
+	my_hex_decoder h2(.hex_digit(score_hunds), .segments(HEX2[6:0]));
+	my_hex_decoder h5(.hex_digit(lives), .segments(HEX5[6:0]));
+	
+	wire [9:0] keyboard_out;
+	my_keyboard_module(.CLOCK_50(CLOCK_50), .reset(KEY[0]), .PS2_CLK(PS2_CLK), .PS2_DAT(PS2_DAT), .out(keyboard_out));
+endmodule
+
+module my_keyboard_module(
+    input CLOCK_50,
+	 input reset,
+	 
+	 inout PS2_CLK,
+	 inout PS2_DAT,
+	 
+	 output [9:0] out
+	 );
+	 
+	 keyboard_tracker #(.PULSE_OR_HOLD(0)) tester(
+	     .clock(CLOCK_50),
+		  .reset(reset),
+		  .PS2_CLK(PS2_CLK),
+		  .PS2_DAT(PS2_DAT),
+		  .w(out[4]),
+		  .a(out[5]),
+		  .s(out[6]),
+		  .d(out[7]),
+		  .left(out[0]),
+		  .right(out[1]),
+		  .up(out[2]),
+		  .down(out[3]),
+		  .space(out[8]),
+		  .enter(out[9])
+		  );
+endmodule
+
+module lifeReg(clk, q);
+	input clk;
+	output reg [7:0] q;
+	initial q = 16'd5;
+	
+	always @(posedge clk)
+	begin
+		if (q == 8'b11111111)
+			begin
+				q <= q;
+			end
+		else
+			begin
+				q <= q - 1'b1;
+			end
+	end
+	
 endmodule
 
 module fiveReg(clk, in, reg0, reg1, reg2, reg3, reg4, shift, load);
@@ -200,6 +273,8 @@ module control(
 	 initial x_counter = 1'b0;
 	 initial y_counter = 1'b0;
 	 initial wait_counter = 25'd49999999;
+	 initial wait_reset = 25'd49999999;
+	 
     
 
     
@@ -249,7 +324,7 @@ module control(
 			begin
             current_state <= S_RESET;
 				block_counter <= 1'b0;
-				wait_counter <= 25'd49999999;
+				wait_counter <= wait_reset;
 			end
         else
 		begin
@@ -288,7 +363,8 @@ module control(
 				if(wait_counter == 1'b0)
 					begin
 						current_state <= next_state;
-						wait_counter <= 25'd49999999;
+						wait_reset <= wait_reset - 16'd100000;
+						wait_counter <= wait_reset;
 					end
 				else
 					wait_counter <= wait_counter - 1;
@@ -299,4 +375,98 @@ module control(
 				current_state <= next_state;
 		end
     end // state_FFS
+endmodule
+
+module fibonacci_lfsr_5bit(
+  input clk,
+  input rst_n,
+  output reg [4:0] data);
+
+	initial data <= 5'h1f;
+	reg [4:0] data_next;
+
+	always @* begin
+	  data_next[4] = data[4]^data[1];
+	  data_next[3] = data[3]^data[0];
+	  data_next[2] = data[2]^data_next[4];
+	  data_next[1] = data[1]^data_next[3];
+	  data_next[0] = data[0]^data_next[2];
+	end
+
+	always @(posedge clk or negedge rst_n)
+	  if(!rst_n)
+		 data <= 5'h1f;
+	  else
+		 data <= data_next;
+
+endmodule
+
+module my_hex_decoder(hex_digit, segments);
+    input [3:0] hex_digit;
+    output reg [6:0] segments;
+   
+    always @(*)
+        case (hex_digit)
+            4'h0: segments = 7'b100_0000;
+            4'h1: segments = 7'b111_1001;
+            4'h2: segments = 7'b010_0100;
+            4'h3: segments = 7'b011_0000;
+            4'h4: segments = 7'b001_1001;
+            4'h5: segments = 7'b001_0010;
+            4'h6: segments = 7'b000_0010;
+            4'h7: segments = 7'b111_1000;
+            4'h8: segments = 7'b000_0000;
+            4'h9: segments = 7'b001_1000;
+            4'hA: segments = 7'b000_1000;
+            4'hB: segments = 7'b000_0011;
+            4'hC: segments = 7'b100_0110;
+            4'hD: segments = 7'b010_0001;
+            4'hE: segments = 7'b000_0110;
+            4'hF: segments = 7'b000_1110;   
+            default: segments = 7'b1111_1111;
+        endcase
+endmodule
+
+module scoreReg(clk, q);
+	input clk;
+	output reg [7:0] q;
+	
+	always @(posedge clk)
+	begin
+		q <= q + 1'b1;
+	end
+	
+endmodule
+
+module BCD(
+	input [7:0] data,
+	output reg [3:0] hundreds,
+	output reg [3:0] tens,
+	output reg [3:0] ones
+	);
+	
+	integer i;
+	always@(data)
+	begin
+		hundreds = 4'd0;
+		tens = 4'd0;
+		ones = 4'd0;
+		
+		for (i=7; i>= 0; i = i-1)
+		begin
+			if(hundreds >= 5)
+				hundreds = hundreds + 3;
+			if(tens >= 5)
+				tens = tens + 3;
+			if(ones >= 5)
+				ones = ones + 3;
+			
+			hundreds = hundreds << 1;
+			hundreds[0] = tens[3];
+			tens = tens << 1;
+			tens[0] = ones[3];
+			ones = ones << 1;
+			ones[0] = data[i];
+		end
+	end
 endmodule
